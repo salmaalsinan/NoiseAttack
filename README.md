@@ -8,10 +8,15 @@ It also includes scripts for implementing in-domain noise-based attacks describe
 
 # Applications
 1- Evaluating ID/OOD generalization under diverse noise distributions.
+
 2- Simulating noise-induced failure cases in vision models.
+
 3- Benchmarking robust training strategies under diverse input perturbation regimes.
+
 4- Analyzing architectural sensitivity to noise characteristics.
+
 5- Generate and apply structured, unstructured, single and compound noise patterns to images.
+
 6- Reproduce in-domain adversarial attacks.
 
 # Citation
