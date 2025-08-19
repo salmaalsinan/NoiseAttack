@@ -1,0 +1,3 @@
+SEISMICROOT: /data/Thesis/Projects/NoiseAttack/Data/ #replace with your datapath
+LOGSROOT: /data/Thesis/Projects/NoiseAttack/tensorboard/logs/ #replace with your logs path 
+
