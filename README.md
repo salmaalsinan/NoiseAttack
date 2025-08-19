@@ -26,7 +26,7 @@ If you use this code, please cite the relevant paper(s).
 
 Use of this software implies accepting all the terms and conditions described in
 the
-[license]()
+[license](LICENSE.txt)
 document available in this repository.  We remind users that the use of this
 software is permitted for non-commercial applications, and proper credit must be
 given to the authors whenever this software is used.
