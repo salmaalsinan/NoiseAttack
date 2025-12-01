@@ -3,17 +3,17 @@ import torch, torchvision
 import time
 import datetime
 from models.build import build_model, model_load_weights
-from noiseadding import build_noise_transforms, CombinedTransforms
+from noiseadding import build_noise_transforms
 from data import get_train_val_dataset, get_dataset, get_train_val_dataset
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn as nn
 import os
 import argparse
-from attacks import fgsm, pgd_linf,indomain
 import yaml
+import copy
 
-METADATA = '../metadata/metadata/'
+METADATA = '../metadata/'
 with open(os.path.join("../config/", "global_config.yml"), 'r') as stream:
     data_loaded = yaml.safe_load(stream)
 SEISMICROOT = data_loaded['SEISMICROOT']
@@ -32,7 +32,7 @@ class AverageMeter(object):
 def train_(model, problem, loss_type, metrics,
            train_loader, valid_loader, device,
           epochs=30, learning_rate=5e-5,
-          reports_per_epoch = 10, tb=None, attack=None, savepath1=None,att_args={}):
+          reports_per_epoch = 10, tb=None,savepath1=None):
     iter_per_epoch = len(train_loader)
     iter_per_report = iter_per_epoch // reports_per_epoch
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -41,6 +41,7 @@ def train_(model, problem, loss_type, metrics,
     if tb is not None:
         sample = next(iter(valid_loader))
         input_ = torchvision.utils.make_grid(sample['input'], padding=1)[0][None, ...]
+        
         if problem == 'denoise':
             target_ = torchvision.utils.make_grid(sample['target'].float(), padding=1)[0][None, ...]
         else:
@@ -50,9 +51,12 @@ def train_(model, problem, loss_type, metrics,
 
     for epoch in range(epochs):
         model.train()
+        metrics2=copy.deepcopy(metrics)
+        metrics2.reset()
         # Progress reporting
         batch_time = AverageMeter()
         losses = AverageMeter()
+        losses_val = AverageMeter()
         N = len(train_loader)
         end = time.time()
 
@@ -65,10 +69,7 @@ def train_(model, problem, loss_type, metrics,
             else:
                 y = sample['target'].to(device)
             # Forward pass: compute predicted y by passing x to the model.
-            # add adversarial attacks
-            if attack is not None:
-                x += attack(model, x, y, loss_type, **att_args)
-            y_pred = model(x)
+            y_pred = model(x) 
             # Compute and print loss.
             loss = loss_fn(y_pred, y)
 
@@ -97,8 +98,12 @@ def train_(model, problem, loss_type, metrics,
                  'Training Loss {loss.val:.4f} ({loss.avg:.4f})'.format(epoch, i, N, batch_time=batch_time, loss=losses, eta=eta))
             elif i % (iter_per_report) == 0:
                 print('.', end='')
-
-            #break # useful for quick debugging
+            
+            if problem == 'firstbreak':
+                y_pred = torch.argmax(y_pred, dim=1) # get the most likely prediction
+            metrics2.add_batch(y.detach().cpu().numpy(), y_pred.detach().cpu().numpy())
+        
+        #break # useful for quick debugging
         torch.cuda.empty_cache(); del x, y;
         # Validation after each epoch
         model.eval()
@@ -109,19 +114,20 @@ def train_(model, problem, loss_type, metrics,
                 y = sample['target'].long().to(device) 
             else:
                 y = sample['target'].to(device)
-            if attack is not None:
-                delta = attack(model, x, y, loss_fn=loss_type, **att_args)
-                x += delta
             with torch.no_grad():
                 y_pred = model(x)
+                loss_v = loss_fn(y_pred, y)
+                losses_val.update(loss.item(), x.size(0))
                 if problem == 'firstbreak':
                     y_pred = torch.argmax(y_pred, dim=1) # get the most likely prediction
             metrics.add_batch(y.detach().cpu().numpy(), y_pred.detach().cpu().numpy())
             print('_', end='')
         print(f'\nValidation stats ({metrics.name}):', metrics.get())
         if tb is not None:
-            tb.add_scalar("Loss", losses.avg, epoch)
-            tb.add_scalar(f"{metrics.name}", metrics.get(), epoch)
+            tb.add_scalar("Train/Loss", losses.avg, epoch)
+            tb.add_scalar("Val/Loss", losses_val.avg, epoch)
+            tb.add_scalar(f"Train/{metrics.name}", metrics2.get(), epoch)
+            tb.add_scalar(f"Val/{metrics.name}", metrics.get(), epoch)
             if problem == 'denoise':
                 input_ = torchvision.utils.make_grid(x, padding=1)[0][None, ...]
                 preds_ = torchvision.utils.make_grid(y_pred, padding=1)[0][None, ...]
@@ -130,14 +136,12 @@ def train_(model, problem, loss_type, metrics,
                 preds_ = torchvision.utils.make_grid(y_pred.unsqueeze(1), padding=1)
             tb.add_image("inputs", input_, global_step=epoch)
             tb.add_image("preds", preds_, global_step=epoch)
-            if attack is not None:
-                attack_ = torchvision.utils.make_grid(delta, padding=1)[0][None, ...]
-                tb.add_image("attack", attack_, global_step=epoch)
         if epoch ==49:
             torch.save(model.state_dict(), savepath1)
             print('\nTraining 50E done. Model saved ({}).'.format(savepath1))
+            
 def train_denoise(model_type='unet', noise_type=-1, noise_scale=0, gpu_id=0,
-                  epochs=30, learning_rate=5e-5, batch_size=8, workers=4, attack=None, pretrained=None, dataclip=True, prefix='', rootdir=None, **train_args):
+                  epochs=30, learning_rate=5e-5, batch_size=8, workers=4, pretrained=None, dataclip=True, prefix='', rootdir=None, **train_args):
     model = build_model(model_type, 'denoise')
     is_pretrained = True if pretrained else False
     if is_pretrained:
@@ -152,8 +156,7 @@ def train_denoise(model_type='unet', noise_type=-1, noise_scale=0, gpu_id=0,
     train_dataset, val_dataset = get_train_val_dataset(denoise_dataset)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=workers)
     valid_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=workers)
-    attack_type = 'none' if attack is None else attack.__name__
-    run_id = f'{prefix}{model_type}_denoise_noisetype_{noise_type}_noisescale_{noise_scale}_dataclip_{dataclip}_attack_{attack_type}_pretrained_{is_pretrained}'
+    run_id = f'{prefix}{model_type}_denoise_noisetype_{noise_type}_noisescale_{noise_scale}_dataclip_{dataclip}_attack_none_pretrained_{is_pretrained}'
     save_path = os.path.join(METADATA, run_id + '.pkl')
     save_path1 = os.path.join(METADATA,'50E/', run_id + '.pkl')
     tb = SummaryWriter(os.path.join(LOGSROOT, 'denoise/', run_id))
@@ -161,13 +164,13 @@ def train_denoise(model_type='unet', noise_type=-1, noise_scale=0, gpu_id=0,
     metrics = RMSE()
     train_(model, 'denoise', loss_fn, metrics,
            train_loader, valid_loader, device,
-           epochs=epochs, learning_rate=learning_rate, tb=tb, attack=attack,savepath1=save_path1, **train_args)
+           epochs=epochs, learning_rate=learning_rate, tb=tb,savepath1=save_path1, **train_args)
     torch.save(model.state_dict(), save_path)
     tb.close()
     print('\nTraining done. Model saved ({}).'.format(save_path))
 
 def train_first_break(model_type='unet', noise_type=-1, noise_scale=0, gpu_id=0,
-                  epochs=10, learning_rate=5e-5, batch_size=8, workers=4, attack=None, pretrained=None, dataclip=True, prefix='', rootdir=None, **train_args):
+                  epochs=10, learning_rate=5e-5, batch_size=8, workers=4, pretrained=None, dataclip=True, prefix='', rootdir=None, **train_args):
     model = build_model(model_type, 'firstbreak')
     is_pretrained = True if pretrained else False
     if is_pretrained:
@@ -182,8 +185,7 @@ def train_first_break(model_type='unet', noise_type=-1, noise_scale=0, gpu_id=0,
     train_dataset, val_dataset = get_train_val_dataset(denoise_dataset)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=workers)
     valid_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=workers)
-    attack_type = 'none' if attack is None else attack.__name__
-    run_id = f'{prefix}{model_type}_firstbreak_noisetype_{noise_type}_noisescale_{noise_scale}_dataclip_{dataclip}_attack_{attack_type}_pretrained_{is_pretrained}'
+    run_id = f'{prefix}{model_type}_firstbreak_noisetype_{noise_type}_noisescale_{noise_scale}_dataclip_{dataclip}_attack_none_pretrained_{is_pretrained}'
     save_path = os.path.join(METADATA, run_id + '.pkl')
     save_path1 = os.path.join(METADATA,'50E/', run_id + '.pkl')
     tb = SummaryWriter(os.path.join(LOGSROOT, 'firstbreak/', run_id))
@@ -191,7 +193,7 @@ def train_first_break(model_type='unet', noise_type=-1, noise_scale=0, gpu_id=0,
     metrics = ConfusionMatrix(2, train_loader.dataset.dataset.class_names)
     train_(model, 'firstbreak', loss_fn, metrics,
            train_loader, valid_loader, device,
-           epochs=epochs, learning_rate=learning_rate, tb=tb, attack=attack,savepath1=save_path1, **train_args)
+           epochs=epochs, learning_rate=learning_rate, tb=tb,savepath1=save_path1, **train_args)
     torch.save(model.state_dict(), save_path)
     tb.close()
     print('\nTraining done. Model saved ({}).'.format(save_path))
@@ -204,46 +206,22 @@ if __name__ == "__main__":
     parser.add_argument("--noise_type", type=int, default=0)
     parser.add_argument("--noise_scale", type=float, default=0.25)
     parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--attack", type=str, default=None)
     parser.add_argument("--pretrained", type=str, default=None)
-    parser.add_argument("--epsilon", type=float, default=0.1)
-    parser.add_argument("--alpha", type=float, default=0.01)
     parser.add_argument("--prefix", type=str, default='')
-    parser.add_argument("--dataclip", type=bool, default=False)
+    parser.add_argument("--dataclip", type=bool, default=True)
     parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--lr", type=float, default=5e-5)
     args = parser.parse_args()
-    #if args.dataclip:
-    #    rootdir = os.path.join(SEISMICROOT, 'data/')
-    #else:
-    #    rootdir = os.path.join(SEISMICROOT, 'normalized/')
-    
+
     if args.dataclip:
-        rootdir = os.path.join(SEISMICROOT, 'data_slices/')
+        rootdir = os.path.join(SEISMICROOT, 'Splits/Train_Val/')
     else:
         rootdir = os.path.join(SEISMICROOT, 'normalized_resized_slices/')
-    att_args = {}
-    if args.attack is None:
-        attack = None
-    elif args.attack == 'fgsm':
-        attack = fgsm
-        att_args['epsilon'] = args.epsilon
-        if args.noise_type != -1:
-            # scale attack noise to be the same signal-to-noise
-            att_args['epsilon'] *= min(1 / (args.noise_scale+1e-12) / 4, 1)
-    elif args.attack == 'indomain':
-        attack = indomain
-        att_args['epsilon'] = args.epsilon
-        if args.noise_type != -1:
-            # scale attack noise to be the same signal-to-noise
-            att_args['epsilon'] *= min(1 / (args.noise_scale+1e-12) / 4, 1)
-    else:
-        attack = pgd_linf
-        att_args['epsilon'] = args.epsilon
-        att_args['alpha'] = args.alpha
-        if args.noise_type != -1:
-            # scale attack noise to be the same signal-to-noise
-            att_args['epsilon'] *= min(1 / (args.noise_scale+1e-12) / 4, 1)
+
+
     if args.problem == 'denoise':
-        train_denoise(args.model, args.noise_type, args.noise_scale,args.device, epochs=args.epochs, attack=attack, pretrained=args.pretrained, att_args=att_args, dataclip=args.dataclip, prefix=args.prefix, batch_size=args.batch_size, rootdir=rootdir)
+        train_denoise(args.model, args.noise_type, args.noise_scale,args.device, epochs=args.epochs, pretrained=args.pretrained, 
+                      dataclip=args.dataclip, prefix=args.prefix, batch_size=args.batch_size, rootdir=rootdir,learning_rate=args.lr)
     else:
-        train_first_break(args.model, args.noise_type, args.noise_scale, args.device, epochs=args.epochs, attack=attack, pretrained=args.pretrained, att_args=att_args, dataclip=args.dataclip, prefix=args.prefix, batch_size=args.batch_size, rootdir=rootdir)
+        train_first_break(args.model, args.noise_type, args.noise_scale, args.device, epochs=args.epochs, 
+                           pretrained=args.pretrained, dataclip=args.dataclip, prefix=args.prefix, batch_size=args.batch_size, rootdir=rootdir,learning_rate=args.lr)

@@ -23,6 +23,26 @@ def calculate_psnr(img1, img2):
     max_value = img1.max()
     return 20 * np.log10(max_value / (np.sqrt(mse)))
 
+def snr_ratio(clean, noisy):
+    """
+    clean: ground truth signal (np.ndarray)
+    noisy: noisy or reconstructed signal (np.ndarray)
+    returns: SNR ratio (not in dB)
+    """
+    clean = np.asarray(clean, dtype=float)
+    noisy = np.asarray(noisy, dtype=float)
+
+    noise = noisy - clean
+
+    signal_power = np.sum(clean ** 2)
+    noise_power = np.sum(noise ** 2)
+
+    if noise_power == 0:
+        return np.inf  # perfect match
+
+    return signal_power / noise_power
+
+
 class RandomHorizontalFlip():
     def __init__(self, prob=0.5):
         self.prob = prob

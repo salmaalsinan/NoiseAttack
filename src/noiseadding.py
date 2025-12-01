@@ -17,7 +17,7 @@ from collections.abc import Iterable
 import matplotlib.pyplot as plt
 from scipy.fftpack import fft, ifft
 from scipy.signal import butter, lfilter, freqz
-from utils import ScaleNormalize, RandomShift,calculate_psnr
+from utils import ScaleNormalize, RandomShift,calculate_psnr, snr_ratio
 
 
 def butter_lowpass(cutoff, fs, order=5):
@@ -52,12 +52,12 @@ class add_gaussnoise(BaseNoise):
         noiselevel = np.random.uniform(low=self.mu - sqrt(3) * self.std, high=self.mu + sqrt(3) * self.std)
         input, target = sample['input'], sample['target']
         input = input.copy()
-        #         print(input.shape,target.shape)
+
         img = input.squeeze()
         noise = np.random.normal(loc=0, scale=noiselevel, size=img.shape) * 0.01 * noiselevel
 
         input += np.expand_dims(noise, axis=2)
-        #         print(input.shape,target.shape)
+
         return {'input': input, 'target': target}
 
 
@@ -151,11 +151,10 @@ class add_color_noise(BaseNoise):
         input, target = sample['input'], sample['target']
         input = input.copy()
 
-        #         print(orgiinput.shape)
+
         img = input.squeeze()
         im = []
         exponent = random.choice([1, 2])
-        #         noisescale=random.choice(range(1, 10, 1))*noisescale
         im.append(self.powerlaw_psd_gaussian(exponent, img.shape, fmin, None))
         y = np.array(np.array(im)).squeeze() * noisescale
         input += np.expand_dims(y, axis=2)
@@ -172,7 +171,7 @@ class add_bandpassed_noise(BaseNoise):
         self.mu = ampl_mu
         self.std = ampl_std
 
-        #     print(BasicNoise)
+
 
     # USEFUL FUNCTIONS
     def band_limited_noise(self, min_freq, max_freq, np_seed_rnd, samples=1024, samplerate=1):
@@ -269,7 +268,7 @@ class add_rainnoise(BaseNoise):
         drops = []
         area = imshape[0] * imshape[1]
         no_of_drops = area // 600
-        #     print(no_of_drops)
+     
         if rain_type.lower() == 'drizzle':
             no_of_drops = area // 770
             drop_length = 10
@@ -284,7 +283,7 @@ class add_rainnoise(BaseNoise):
             else:
                 x = np.random.randint(0, imshape[1] - slant)
             y = np.random.randint(0, imshape[0] - drop_length)
-            #         print(slant,(x,y))
+
             drops.append((x, y))
         return drops, drop_length
 
@@ -301,7 +300,6 @@ class add_rainnoise(BaseNoise):
         input, target = sample['input'], sample['target']
         input = input.copy()
         noisescale = np.random.uniform(low=self.mu - sqrt(3) * self.std, high=self.mu + sqrt(3) * self.std)
-        #         print(color)
         img = input.squeeze()
         slant = -1
 
@@ -344,7 +342,6 @@ class add_spnoise(BaseNoise):
         amount = percentage / 100
         out = np.copy(img)
         # Salt mode
-        #             print(img.shape)
         num_salt = np.ceil(amount * img.size * s_vs_p)
         coords = [np.random.randint(0, i - 1, int(num_salt))
                   for i in img.shape]
@@ -469,14 +466,14 @@ class add_noise_FFT(BaseNoise):
         elif masktype == "lowpassfilter":
             center = np.fft.fftshift(im_fft)
             d0 = f_lowpas
-            #             print(d0)
+  
             LowPassCenter = center * self.gaussianLP(d0, img.shape)
             im_fft2 = np.fft.ifftshift(LowPassCenter)
             im_new = fftpack.ifft2(im_fft2).real
         elif masktype == "highpassfilter":
             center = np.fft.fftshift(im_fft)
             d0 = f_high
-            #             print(d0)
+
             HighPassCenter = center * self.gaussianHP(d0, img.shape)
             im_fft2 = np.fft.ifftshift(HighPassCenter)
             im_new = fftpack.ifft2(im_fft2).real
@@ -580,16 +577,16 @@ class add_hyperbolic_noise(BaseNoise):
         dt = 0.002  # time sampling
 
         dd = np.zeros_like(img)
-        #         print(dd.shape)
+  
 
         num_events = random.choice(range(10, 20, 1))
-        #     print(num_events)
+
         z = np.sort(np.random.randint(low=6500, high=7000, size=(num_events)))
         v = np.sort(np.random.randint(low=50, high=60, size=(num_events)))
-        #     print(z,v)
+   
         for j in range(num_events):
             f = 40
-            # print(f)
+         
             length = 0.4
             x_axis = np.arange(start=0,
                                stop=1000,
@@ -707,7 +704,7 @@ class LowPassFilter_random(BaseNoise):
             self.cutoff_mu = 0.9-(np.clip(self.noise_scale,0.05,2) - 0.05)*(0.9-0.1)/(3-0.05)
         else:
            self.cutoff_mu = np.random.uniform(low=0.1, high=0.9, size=1) # Define your cutoff frequency at random
-           print('cut off',self.cutoff_mu)
+           #print('cut off',self.cutoff_mu)
         self.cutoff_std = cutoff_std
         self.order = order
         self.dt = dt
@@ -774,7 +771,7 @@ class LowPassFilter_random(BaseNoise):
         ax[2].imshow(filtered, cmap='seismic',vmin=-1, vmax=1)
         print('filtered min/max/mean',np.min(filtered),np.max(filtered),np.mean(filtered))
         ax[2].set_title('Filtered',fontsize=12,fontweight='bold')
-        ax[2].set_xlabel(f'PSNR ={np.round(calculate_psnr(filtered,img),3)}',fontsize=10,fontweight='bold')
+        ax[2].set_xlabel(f'PSNR ={np.round(calculate_psnr(filtered,img),3)} \\ \u03B2 ={np.round(snr_ratio(filtered,img),2)}',fontsize=10,fontweight='bold')
         
         im=ax[3].imshow(np.abs(img-filtered), cmap='jet', vmin=0, vmax=1)
         ax[3].set_title('Absolute Difference',fontsize=12,fontweight='bold')
@@ -794,7 +791,7 @@ class CombinedTransforms():
             self.scale = [scale] * len(transforms)
 
     def __call__(self, sample):
-        #print(np.shape(sample['input']))
+     
         noises = [transform.__shifted_call__(sample)['input'] * scale for transform, scale in
                   zip(self.transforms, self.scale)]
        
@@ -873,12 +870,10 @@ def build_noise_transforms(noise_type, scale):
         noise_level = scale
     else:
         noise_level = scale / sqrt(len(noise_transforms['linear']))
-    #print(len(noise_transforms['linear']), noise_level)
-    #print('SNR',scale,'scaled SNR',noise_level)
+
     return noise_transforms['nonlinear'] + [CombinedTransforms(*noise_transforms['linear'], scale=noise_level)]
 
 def Noise_LP (noise_scale=0.0,cutoff_std=0.05):
-   # print('scale is',noise_scale)
     low_pass_noise_random=[LowPassFilter_random(noise_scale=noise_scale,cutoff_std=cutoff_std), ScaleNormalize('input')]
     noise_types2 = {
                 -1: [],
@@ -894,7 +889,6 @@ def build_noise_transforms2(noise_type, scale,cutoff_std=0.05):
         noise_level = scale
     else:
         noise_level = scale / sqrt(len(noise_transforms['linear']))
-    #print(len(noise_transforms['linear']), noise_level)
-    #print('SNR',scale,'scaled SNR',noise_level)
+
     return noise_transforms['nonlinear'] + [CombinedTransforms(*noise_transforms['linear'], scale=noise_level)]
 

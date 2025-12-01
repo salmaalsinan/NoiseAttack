@@ -1,17 +1,21 @@
 import os
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset
 from utils import *
 import yaml
+import torch
 
 # Read YAML file
 with open(os.path.join("../config/", "global_config.yml"), 'r') as stream:
     data_loaded = yaml.safe_load(stream)
 SEISMICROOT = data_loaded['SEISMICROOT']
-#DERAINROOT = data_loaded['DERAINROOT']
-#DERAINTRAIN = os.path.join(SEISMICROOT, 'train/Rain13K')
-#DERAINTEST = os.path.join(SEISMICROOT, 'test/Rain13K')
-SEISMICDIR = os.path.join(SEISMICROOT, 'normalized_resized_slices/')
+#SEISMICDIR = os.path.join(SEISMICROOT, 'normalized_resized_slices/') #full dataset presplit
+SEISMICDIR = os.path.join(SEISMICROOT, 'Splits/Train_Val/')
+
 FIELDDIR = os.path.join(SEISMICROOT, 'fielddata/')
+
+#SEISMICDIR = os.path.join(SEISMICROOT, 'normalized_resized_slices/') # full dataset pre-split (You can select it by choosing Dataclip=False in train.py)
+#SEISMICDIRTEST = os.path.join(SEISMICROOT, 'Splits/Test/') # test data you can specify it through root dorectory in get_data set
+#denoise_dataset = get_dataset(problem, noise_transforms=noise,rootdir='../Data/Splits/Test/')
 
 class BaseLoader(Dataset):
     def read_input(self, idx):
@@ -25,8 +29,6 @@ class FirstBreakLoader(BaseLoader):
         self.rootdir = rootdir
         self.inputdir = os.path.join(self.rootdir, 'input/')
         self.targetdir = os.path.join(self.rootdir, 'target/')
-        #self.inputs = sorted([i for i in os.listdir(self.inputdir) if os.path.isfile(i)])
-        #self.targets = sorted([i for i in os.listdir(self.targetdir) if os.path.isfile(i)])
         self.inputs = sorted(os.listdir(self.inputdir))
         self.targets = sorted(os.listdir(self.targetdir))
         self.transform = transform
@@ -48,7 +50,7 @@ class FirstBreakLoader(BaseLoader):
         target = self.read_target(idx)
         sample = {'input': image, 'target': target}
         return self.transform(sample) if self.transform else sample
-
+    
 class DenoiseLoader(FirstBreakLoader):
     def __init__(self, *pargs, **kwargs):
         super(DenoiseLoader, self).__init__(*pargs, **kwargs)
@@ -78,8 +80,6 @@ class NoiseLoader(FirstBreakLoader):
         sample = {'input': image, 'target': target}
         return self.transform(sample) if self.transform else sample
     
-
-
 def get_first_break_dataset(rootdir=None,
                             target_size=(224, 224),
                             noise_transforms=[]):
@@ -145,16 +145,11 @@ def get_noise_dataset(rootdir=None,
     return NoiseLoader(rootdir, transform=transforms.Compose(transforms_))
 
 
-
 def get_real_dataset(rootdir=FIELDDIR,
                             target_size=(224, 224),
                             noise_transforms=[]):
     transforms_ = []
-    #transforms_+=[ToTranspose()]
     transforms_ += noise_transforms
-    #transforms_+=[ToTranspose()]
-    #transforms_ += [Resize(target_size=target_size)]
-    #transforms_ += [ScaleNormalize('input')]
     transforms_ += [FlipChannels(), ToTensor()]
     return RealDataLoader(rootdir, transform=transforms.Compose(transforms_))
 
@@ -172,8 +167,27 @@ def get_dataset(dtype, *pargs, **kwargs):
         raise ValueError("Unknown Dataset Type")
     return dataset
 
-def get_train_val_dataset(dataset, valid_split=0.1, **kwargs):
+
+def get_train_val_dataset(dataset, valid_split=0.1, seed=911, **kwargs):
+    """
+    Split a PyTorch dataset into train and validation subsets with a reproducible seed.
+    
+    :param dataset: PyTorch Dataset
+    :param valid_split: fraction of dataset for validation
+    :param seed: random seed for reproducibility
+    :param kwargs: additional arguments passed to random_split (e.g., generator)
+    :return: (train_dataset, val_dataset)
+    """
     train_size = int((1 - valid_split) * len(dataset))
-    test_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, test_size], **kwargs)
+    val_size = len(dataset) - train_size
+    
+    generator = torch.Generator().manual_seed(seed)
+    
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        dataset,
+        [train_size, val_size],
+        generator=generator,
+        **kwargs
+    )
+    
     return train_dataset, val_dataset
