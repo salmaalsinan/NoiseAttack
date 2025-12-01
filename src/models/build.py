@@ -37,8 +37,6 @@ def model_load_weights(model, load_path):
 
 def build_model(model, problem, activation=None):
     if model == 'restormer':
-        #if problem == 'deraining':
-        #    model = BaseRestormer(inp_channels=3, out_channels=3, dim=24)
         if problem == 'denoise':
             model = BaseRestormer(inp_channels=1, out_channels=1, dim=24, activation=activation)
         elif problem == 'firstbreak':
@@ -46,8 +44,6 @@ def build_model(model, problem, activation=None):
         else:
             raise ValueError('Undefined problem!')
     elif model == 'swin':
-        #if problem == 'deraining':
-         #   model = BaseSwinUnet(in_chans=3, num_classes=3, embed_dim=48)
         if problem == 'denoise':
             model = BaseSwinUnet(in_chans=1, num_classes=1, embed_dim=48, activation=activation)
         elif problem == 'firstbreak':
@@ -55,8 +51,6 @@ def build_model(model, problem, activation=None):
         else:
             raise ValueError('Undefined problem!')
     elif model == 'unet':
-        #if problem == 'deraining':
-          #  model = BaseUnet(in_channels=3, out_channels=3)
         if problem == 'denoise':
             model = BaseUnet(in_channels=1, out_channels=1, activation=activation)
         elif problem == 'firstbreak':

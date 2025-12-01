@@ -4,6 +4,16 @@ import torch.utils.checkpoint as checkpoint
 from einops import rearrange
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
+"""
+    Code implementation by 
+        Swin-Unet: Unet-like Pure Transformer for Medical Image Segmentation
+        https://arxiv.org/abs/2105.05537
+        https://github.com/HuCaoFighting/Swin-Unet
+
+    This is a modified Swin-T from the origional (Liu et al., 2021): 
+                https://arxiv.org/pdf/2103.14030
+                https://github.com/microsoft/Swin-Transformer
+"""
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -557,6 +567,8 @@ class PatchEmbed(nn.Module):
 
 class SwinTransformerSys(nn.Module):
     r""" Swin Transformer
+            A PyTorch impl of : `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows`  -
+                https://arxiv.org/pdf/2103.14030
 
     Args:
         img_size (int | tuple(int)): Input image size. Default 224
@@ -586,7 +598,8 @@ class SwinTransformerSys(nn.Module):
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
                  use_checkpoint=False, final_upsample="expand_first", **kwargs):
         super().__init__()
-
+        
+        
         #print("SwinTransformerSys expand initial----depths:{};depths_decoder:{};drop_path_rate:{};num_classes:{}".format(depths,
         #depths_decoder,drop_path_rate,num_classes))
 

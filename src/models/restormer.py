@@ -3,10 +3,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numbers
+from torch.nn.modules.batchnorm import _BatchNorm
 
 from einops import rearrange
 
+'''
+    Code implementation by (Zamir et al, 2021):
+    Restormer: Efficient Transformer for High-Resolution Image Restoration
+    https://arxiv.org/abs/2111.09881
+    https://github.com/swz30/Restormer
 
+'''
 ##########################################################################
 ## Layer Norm
 
@@ -249,6 +256,8 @@ class Restormer(nn.Module):
         ###########################
 
         self.output = nn.Conv2d(int(dim * 2 ** 1), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
+        #self.apply(self._init_weights) #if you want to add explicit weight initialization, not done here 
+
 
     def forward(self, inp_img):
 
@@ -289,6 +298,38 @@ class Restormer(nn.Module):
             out_dec_level1 = self.output(out_dec_level1) + inp_img
 
         return out_dec_level1
+    
+    #if you do not want to run Pytorch default initialization, this was taken from inital code repo where they used it in tehri frame work 
+    # which is not implemented in our work 
+
+    def _init_weights(self, m, scale=1, bias_fill=0, **kwargs):
+        """Initialize network weights.
+
+        Args:
+            module_list (list[nn.Module] | nn.Module): Modules to be initialized.
+            scale (float): Scale initialized weights, especially for residual
+                blocks. Default: 1.
+            bias_fill (float): The value to fill bias. Default: 0
+            kwargs (dict): Other arguments for initialization function.
+        """
+        if isinstance(m, nn.Conv2d):
+            nn.init.kaiming_normal_(m.weight, **kwargs)
+            m.weight.data *= scale
+            if m.bias is not None:
+                m.bias.data.fill_(bias_fill)
+        elif isinstance(m, nn.Linear):
+            nn.init.kaiming_normal_(m.weight, **kwargs)
+            m.weight.data *= scale
+            if m.bias is not None:
+                m.bias.data.fill_(bias_fill)
+        elif isinstance(m, _BatchNorm):
+            nn.init.constant_(m.weight, 1)
+            if m.bias is not None:
+                m.bias.data.fill_(bias_fill)
+        elif isinstance(m, nn.LayerNorm):
+                nn.init.constant_(m.bias, 0)
+                nn.init.constant_(m.weight, 1.0)
+
 
 class BaseRestormer(Restormer):
     def __init__(self, *pargs, activation=None, **kwargs):
@@ -306,3 +347,6 @@ class BaseRestormer(Restormer):
         output = super().forward(inp_img)
         output = self.activation(output)
         return output
+    
+
+    
