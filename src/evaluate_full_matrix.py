@@ -30,8 +30,8 @@ def evaluate(model, loader, metrics,problem):
 
 
 def evaluate_robustness(model,problem, metrics,batch_size,workers):
-    robustness = np.ones([21,20]) * -1
-    for i, noise_type in enumerate([-1,13,14,7,8,9,10,11,12,16,17,18,19,15,0,1,2,3,6,4,5]):
+    robustness = np.ones([20,20]) * -1
+    for i, noise_type in enumerate([-1,13,14,7,8,9,10,11,12,16,17,18,15,0,1,2,3,6,4,5]):
         for j, noise_scale in enumerate([0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.2,1.3,1.4,1.6,1.7,1.8,1.9,2.0]):
             if i==0 and j!=0:
                 continue
