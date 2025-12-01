@@ -1,5 +1,6 @@
 # NoiseAttack
 This repository contains code for generating stochastic input noises (single and compound) and for running in-domain attacks.
+Synthetic data can be downloaded from [Zenodo](10.5281/zenodo.17774415)
 
 # Description
 This repository provides code for generating a wide range of stochastic input noises, including both single-source and compound variants—used in the study: “Should All Noises Be Treated Equally? Impact of Input Noise Variability on Neural Network Robustness.”
