@@ -18,7 +18,7 @@ It also includes scripts for implementing in-domain noise-based attacks describe
 
 5- Generate and apply structured, unstructured, single and compound noise patterns to images.
 
-6- Reproduce in-domain adversarial attacks.
+6- Reproduce in-domain adversarial attacks (soon).
 
 # Citation
 If you use this code, please cite the relevant paper(s).
